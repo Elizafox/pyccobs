@@ -1,0 +1,3 @@
+[submodule "vendor/ccobs"]
+	path = vendor/ccobs
+	url = https://github.com/Elizafox/ccobs

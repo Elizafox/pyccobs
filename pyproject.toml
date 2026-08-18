@@ -1,0 +1,32 @@
+[project]
+name = "pyccobs"
+version = "0.1.0"
+description = "Portable ctypes bindings for ccobs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "0BSD"
+license-files = ["LICENSE", "vendor/ccobs/LICENSE"]
+authors = [{ name = "Elizabeth Kiara Regina Ashford" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[[tool.setuptools.ext-modules]]
+name = "ccobs._ccobs"
+sources = ["vendor/ccobs/src/cobs.c"]
+include-dirs = ["vendor/ccobs/include"]
+define-macros = [["CCOBS_SHARED", "1"], ["CCOBS_BUILDING_LIBRARY", "1"]]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
