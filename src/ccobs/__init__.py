@@ -1,9 +1,9 @@
 """Pythonic ctypes bindings for the ccobs C library."""
 
-from collections.abc import Iterable
 import ctypes
-from enum import IntEnum
 import os
+from collections.abc import Iterable
+from enum import IntEnum
 from typing import Optional
 
 from ._lib import BytePointer, StatePointer, bind
