@@ -8,25 +8,15 @@ native library handle.
 
 ## Build and use
 
-Python 3.11+ is required.
+Python 3.11+ and CMake 3.15+ are required.
 
 ```sh
 python -m pip install -e .
 ```
 
-To cross-compile a Windows wheel on a system with MinGW-w64 installed, select
-the target architecture through the PEP 517 build setting:
-
-```sh
-python -m build --wheel --config-setting=mingw=x86_64
-```
-
-The accepted targets are `x86_64` and `i686` (or their full MinGW triplets).
-The compiler defaults to `<triplet>-gcc`; `CC`, `CFLAGS`, and `LDFLAGS` can
-override or supplement the toolchain. Because the package uses `ctypes` rather
-than the CPython extension API,
-the resulting wheel is tagged for Python 3 generally (for example,
-`py3-none-win_amd64`).
+The package build invokes the vendored ccobs CMake project directly. Because
+the package uses `ctypes` rather than the CPython extension API, the resulting
+wheel is tagged for Python 3 generally (for example, `py3-none-win_amd64`).
 
 Set `CCOBS_LIBRARY_PATH` to a compatible shared library (or its directory) to
 override the bundled copy when testing a different ccobs build.

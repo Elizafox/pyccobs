@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pyccobs"
 version = "0.1.0"
@@ -18,12 +22,6 @@ test = ["pytest>=7"]
 [tool.setuptools]
 package-dir = { "" = "src" }
 include-package-data = true
-
-[[tool.setuptools.ext-modules]]
-name = "ccobs._ccobs"
-sources = ["vendor/ccobs/src/cobs.c"]
-include-dirs = ["vendor/ccobs/include"]
-define-macros = [["CCOBS_SHARED", "1"], ["CCOBS_BUILDING_LIBRARY", "1"]]
 
 [tool.setuptools.packages.find]
 where = ["src"]
