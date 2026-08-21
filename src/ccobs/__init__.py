@@ -107,10 +107,15 @@ class _State:
 
 
 class Encoder(_State):
-    """Incrementally encode one message at a time."""
+    """Incrementally encode message chunks or batches of complete messages."""
+
+    _OUTPUT_CHUNK_SIZE = 64 * 1024
 
     def feed(self, data: object = b"", *, end_message: bool = False) -> bytes:
         raw = memoryview(data).cast("B").tobytes()
+        if end_message:
+            return self.feedv((raw,))
+
         owner, _ = _input_buffer(raw)
         offset = 0
         result = bytearray()
@@ -143,11 +148,73 @@ class Encoder(_State):
 
             return bytes(result)
 
+    def feedv(self, messages: Iterable[object]) -> bytes:
+        """Encode complete, independent messages into one flat framed stream.
+
+        The encoder state is retained between calls. If :meth:`feed` previously
+        supplied an unfinished message, the first message completes it.
+        """
+        pending = [memoryview(message).cast("B").tobytes() for message in messages]
+        if not pending:
+            return b""
+
+        offsets = [0] * len(pending)
+        result = bytearray()
+        while pending:
+            count = len(pending)
+            owners: list[object | None] = []
+            pointers = (BytePointer * count)()
+            sizes = (ctypes.c_size_t * count)()
+            maximum = 0
+            for index, raw in enumerate(pending):
+                owner, pointer = _input_buffer(raw)
+                owners.append(owner)
+                offset = offsets[index]
+                pointers[index] = (
+                    ctypes.cast(ctypes.byref(owner, offset), BytePointer)
+                    if owner
+                    else pointer
+                )
+                sizes[index] = len(raw) - offset
+                maximum += int(self._lib.ccobs_encode_max_size(sizes[index]))
+
+            capacity = max(257, min(maximum, self._OUTPUT_CHUNK_SIZE))
+            output = (ctypes.c_uint8 * capacity)()
+            completed = ctypes.c_size_t(count)
+            written = ctypes.c_size_t(capacity)
+            code = self._lib.ccobs_encodev(
+                self._state,
+                pointers,
+                sizes,
+                ctypes.byref(completed),
+                output,
+                ctypes.byref(written),
+            )
+            result.extend(output[: written.value])
+
+            for index in range(min(completed.value + 1, count)):
+                offsets[index] += sizes[index]
+            if completed.value:
+                del pending[: completed.value]
+                del offsets[: completed.value]
+
+            if code == Error.NEED_OUTPUT:
+                continue
+            if code != Error.OK:
+                _raise_error(self._lib, code)
+            if completed.value != count:
+                raise CcobsError(
+                    Error.PARTIAL, "ccobs_encodev did not complete the batch"
+                )
+
+        return bytes(result)
+
 
 class Decoder(_State):
-    """Incrementally decode a stream, stopping after its first complete frame."""
+    """Incrementally decode framed stream chunks."""
 
     def feed(self, data: object = b"") -> tuple[bytes, int, bool]:
+        """Decode at most one frame and report whether it was completed."""
         raw = memoryview(data).cast("B").tobytes()
         owner, _ = _input_buffer(raw)
         offset = 0
@@ -180,6 +247,41 @@ class Decoder(_State):
 
             return bytes(result), offset, complete.value
 
+    def feedv(self, data: object = b"") -> tuple[bytes, int, tuple[int, ...]]:
+        """Decode framed stream data into one flat byte string.
+
+        The decoder state is retained between calls. The returned tuple contains
+        the decoded bytes, consumed input byte count, and completed frame sizes.
+        If a frame began in a previous call, its size includes bytes returned by
+        that call.
+        """
+        raw = memoryview(data).cast("B").tobytes()
+        owner, _ = _input_buffer(raw)
+        output_capacity = max(1, len(raw))
+        output = (ctypes.c_uint8 * output_capacity)()
+        available = ctypes.c_size_t(len(raw))
+        written = ctypes.c_size_t(output_capacity)
+
+        # Every complete encoded frame ends in zero.  The extra slot lets
+        # decodev consume a partial frame following the final delimiter.
+        frame_capacity = raw.count(0) + 1
+        frame_sizes = (ctypes.c_size_t * frame_capacity)()
+        frame_count = ctypes.c_size_t(frame_capacity)
+        code = self._lib.ccobs_decodev(
+            self._state,
+            ctypes.cast(owner, BytePointer) if owner else BytePointer(),
+            ctypes.byref(available),
+            output,
+            ctypes.byref(written),
+            frame_sizes,
+            ctypes.byref(frame_count),
+        )
+        if code not in (Error.OK, Error.PARTIAL):
+            _raise_error(self._lib, code)
+
+        sizes = tuple(frame_sizes[: frame_count.value])
+        return bytes(output[: written.value]), available.value, sizes
+
 
 def encode(data: object, *, library: Optional[ctypes.CDLL] = None) -> bytes:
     """Encode one bytes-like message, including its trailing zero delimiter."""
@@ -191,42 +293,8 @@ def encodev(
     messages: Iterable[object], *, library: Optional[ctypes.CDLL] = None
 ) -> bytes:
     """Encode a batch of bytes-like messages into one flat framed stream."""
-    lib = library or load_library()
-    raw_messages = [memoryview(message).cast("B").tobytes() for message in messages]
-    count = len(raw_messages)
-    if count == 0:
-        return b""
-
-    owners: list[object | None] = []
-    pointers = (BytePointer * count)()
-    sizes = (ctypes.c_size_t * count)()
-    capacity = 0
-    for index, raw in enumerate(raw_messages):
-        owner, pointer = _input_buffer(raw)
-        owners.append(owner)
-        pointers[index] = pointer
-        sizes[index] = len(raw)
-        capacity += int(lib.ccobs_encode_max_size(len(raw)))
-
-    output = (ctypes.c_uint8 * capacity)()
-    completed = ctypes.c_size_t(count)
-    written = ctypes.c_size_t(capacity)
-    with _State(lib) as state:
-        code = lib.ccobs_encodev(
-            state._state,
-            pointers,
-            sizes,
-            ctypes.byref(completed),
-            output,
-            ctypes.byref(written),
-        )
-
-    if code != Error.OK:
-        _raise_error(lib, code)
-    if completed.value != count:
-        raise CcobsError(Error.PARTIAL, "ccobs_encodev did not complete the batch")
-
-    return bytes(output[: written.value])
+    with Encoder(library) as encoder:
+        return encoder.feedv(messages)
 
 
 def decode(data: object, *, library: Optional[ctypes.CDLL] = None) -> bytes:
@@ -234,8 +302,10 @@ def decode(data: object, *, library: Optional[ctypes.CDLL] = None) -> bytes:
     raw = memoryview(data).cast("B").tobytes()
     with Decoder(library) as decoder:
         output, consumed, complete = decoder.feed(raw)
+
     if not complete:
         raise ValueError("incomplete COBS frame")
+
     if consumed != len(raw):
         raise ValueError("input contains data after the first COBS frame")
 

@@ -29,13 +29,13 @@ def _library_names() -> tuple[str, ...]:
 
 
 def _bundled_library_paths(package_dir: Path) -> list[str]:
-    """Return platform library names produced by the setuptools build."""
+    """Return platform library names produced by the CMake build."""
     if sys.platform == "win32":
-        patterns = ("_ccobs*.pyd", "_ccobs*.dll")
+        patterns = ("ccobs.dll",)
     elif sys.platform == "darwin":
-        patterns = ("_ccobs*.so", "_ccobs*.dylib")
+        patterns = ("libccobs.dylib",)
     else:
-        patterns = ("_ccobs*.so",)
+        patterns = ("libccobs.so",)
 
     return [str(path) for pattern in patterns for path in package_dir.glob(pattern)]
 
