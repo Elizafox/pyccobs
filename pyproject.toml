@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyccobs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Portable ctypes bindings for ccobs"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,7 +37,12 @@ select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.cibuildwheel]
 # ctypes wheels are independent of the Python ABI; build once per platform.
-build = ["cp311-manylinux_*", "cp311-macosx_*", "cp311-win_amd64", "cp311-win_arm64"]
+build = [
+  "cp311-manylinux_*",
+  "cp311-macosx_*",
+  "cp311-win_amd64",
+  "cp311-win_arm64",
+]
 archs = ["native"]
 before-build = 'python -m pip install "cmake>=3.15"'
 test-requires = ["pytest>=7"]
