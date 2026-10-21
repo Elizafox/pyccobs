@@ -53,6 +53,9 @@ class CMakeBuild(build_ext):
             if architecture:
                 configure_command.extend(["-A", architecture])
 
+        if cmake_args := os.environ.get("CMAKE_ARGS"):
+            configure_command.extend(cmake_args.split())
+
         subprocess.run(configure_command, check=True)
         subprocess.run(
             ["cmake", "--build", str(build_dir), "--config", config], check=True
